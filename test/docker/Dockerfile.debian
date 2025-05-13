@@ -1,0 +1,41 @@
+ARG NGINX_IMAGE_TAG=mainline-bookworm
+
+FROM nginx:${NGINX_IMAGE_TAG}
+
+ARG MODULE_NAME=headers-more
+ARG MODULE_SOURCE=https://github.com/openresty/headers-more-nginx-module.git
+
+SHELL [ "/bin/bash", "-exo", "pipefail", "-c"]
+
+# Install dependencies
+RUN apt-get update; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        debhelper \
+        devscripts \
+        git \
+        libpcre2-dev \
+        libpcre3-dev \
+        libssl-dev \
+        libxml2-utils \
+        lsb-release \
+        quilt \
+        unzip \
+        wget \
+        xsltproc \
+        zlib1g-dev \
+    ; \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy build_module.sh
+COPY ./build_module.sh /usr/src/
+
+# Build the module
+WORKDIR /usr/src
+RUN NGINX_VERSION=$(nginx -v 2>&1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+') \
+    ./build_module.sh -n $MODULE_NAME -v $NGINX_VERSION -o /tmp/packages \
+        $MODULE_SOURCE
+
+# Install the module
+RUN apt-get install -y /tmp/packages/nginx-module-${MODULE_NAME}*.deb; \
+    dpkg -L nginx-module-${MODULE_NAME} | grep '^/usr/lib/nginx/modules' | grep '.so$'

@@ -1,0 +1,41 @@
+ARG NGINX_IMAGE_TAG=mainline-alpine
+
+FROM nginx:${NGINX_IMAGE_TAG}
+
+ARG MODULE_NAME=headers-more
+ARG MODULE_SOURCE=https://github.com/openresty/headers-more-nginx-module.git
+
+## Set shell options for better error handling
+SHELL ["/bin/ash", "-exo", "pipefail", "-c"]
+
+## Install build dependencies
+RUN apk update && apk add --no-cache \
+        abuild \
+        build-base \
+        git \
+        linux-headers \
+        openssl \
+        openssl-dev \
+        pcre-dev \
+        pcre2-dev \
+        unzip \
+        wget \
+        zlib-dev \
+    ;
+
+## Allow abuild as a root user \
+RUN printf "#!/bin/sh\\nSETFATTR=true /usr/bin/abuild -F \"\$@\"\\n" > /usr/local/bin/abuild && \
+    chmod +x /usr/local/bin/abuild
+
+# Copy build_module.sh
+COPY ./build_module.sh /usr/src/
+
+## Build auth-spnego module package
+WORKDIR /usr/src
+RUN NGINX_VERSION=$(nginx -v 2>&1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+') \
+    ./build_module.sh -n $MODULE_NAME -v $NGINX_VERSION -o /tmp/packages \
+        $MODULE_SOURCE
+
+# Install the module
+RUN apk add --allow-untrusted /tmp/packages/nginx-module-${MODULE_NAME}*.apk; \
+    apk info -L nginx-module-${MODULE_NAME} | grep '^usr/lib/nginx/modules' | grep '.so$'
